@@ -233,11 +233,8 @@ public class LocalProcess {
             return
         }
         
-        #if canImport(Subprocess)
-        startProcessWithSubprocess(executable: executable, args: args, environment: environment, execName: execName, currentDirectory: currentDirectory)
-        #else
+        // Always use forkpty for proper controlling terminal setup (required for Ctrl-C/SIGINT)
         startProcessWithForkpty(executable: executable, args: args, environment: environment, execName: execName, currentDirectory: currentDirectory)
-        #endif
     }
     
     #if canImport(Subprocess)
