@@ -728,9 +728,6 @@ extension TerminalView {
                     let runFont = runAttributes[.font] as! TTFont
                     let startColumn = segment.column + (processedGlyphs * segment.columnWidth)
                     let endColumn = startColumn + (runGlyphsCount * segment.columnWidth)
-                    if row == 0 {
-                        print(run)
-                    }
                     var backgroundColor: TTColor?
                     if runAttributes.keys.contains(.selectionBackgroundColor) {
                         backgroundColor = runAttributes[.selectionBackgroundColor] as? TTColor
@@ -781,17 +778,14 @@ extension TerminalView {
                     
                     var coreTextPositions = [CGPoint](repeating: .zero, count: runGlyphsCount)
                     CTRunGetPositions(run, CFRange(), &coreTextPositions)
-                    
-                    let firstCoreTextX = coreTextPositions.first?.x ?? 0
-                    let baseX = lineOrigin.x + (cellDimension.width * CGFloat(startColumn))
-                    let xOffset = baseX - firstCoreTextX
 
                     var positions = [CGPoint](repeating: .zero, count: runGlyphsCount)
                     for i in 0..<runGlyphsCount {
-                        let ctPosition = coreTextPositions[i]
+                        // セルグリッドに基づいて位置を計算（CJK文字は2セル幅）
+                        let columnForGlyph = startColumn + (i * segment.columnWidth)
                         positions[i] = CGPoint(
-                            x: ctPosition.x + xOffset,
-                            y: lineOrigin.y + yOffset + ctPosition.y)
+                            x: lineOrigin.x + (cellDimension.width * CGFloat(columnForGlyph)),
+                            y: lineOrigin.y + yOffset + coreTextPositions[i].y)
                     }
 
                     nativeForegroundColor.set()

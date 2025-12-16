@@ -90,6 +90,13 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     var search: SearchService!
     var debug: TerminalDebugView?
     var pendingDisplay: Bool = false
+
+    // IME (Input Method Editor) support
+    var markedTextStorage: NSMutableAttributedString = NSMutableAttributedString()
+    var markedTextSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
+    var markedTextStartX: Int = 0  // カーソルX位置（変換開始時）
+    var markedTextStartY: Int = 0  // カーソルY位置（変換開始時）
+    var markedTextJustConfirmed: Bool = false  // 直前にinsertTextで確定した
     
     var cellDimension: CellDimension!
     var caretView: CaretView!
@@ -411,6 +418,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             return
         }
         drawTerminalContents (dirtyRect: dirtyRect, context: currentContext, bufferOffset: terminal.buffer.yDisp)
+        // Draw IME composing text at cursor position
+        drawMarkedText(in: currentContext)
     }
     
     public override func cursorUpdate(with event: NSEvent)
@@ -599,6 +608,13 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             }
             return
         } else if eventFlags.contains (.control) {
+            // IME変換中にCtrl-Hが押されたらIMEに渡す（バックスペースとして処理）
+            if markedTextStorage.length > 0 {
+                if let ch = event.charactersIgnoringModifiers, ch == "h" || ch == "H" {
+                    interpretKeyEvents([event])
+                    return
+                }
+            }
             // Sends the control sequence
             if let ch = event.charactersIgnoringModifiers {
                 if let fs = ch.unicodeScalars.first {
@@ -732,6 +748,21 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     func insertText(_ string: Any, replacementRange: NSRange, isPaste: Bool) {
+        // Clear marked text when inserting confirmed text
+        if markedTextStorage.length > 0 {
+            // 確定したテキストの幅を計算してmarkedTextStartXに加算
+            var confirmedColumns = 0
+            for char in markedTextStorage.string {
+                confirmedColumns += Wcwidth.cellSize(char)
+            }
+            markedTextStartX += confirmedColumns
+            markedTextJustConfirmed = true
+
+            markedTextStorage = NSMutableAttributedString()
+            markedTextSelectedRange = NSRange(location: NSNotFound, length: 0)
+            updateMarkedTextDisplay()
+        }
+
         if let str = string as? NSString {
             if isPaste, terminal.bracketedPasteMode {
                 send(data: EscapeSequences.bracketedPasteStart[0...])
@@ -747,12 +778,40 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     // NSTextInputClient protocol implementation
     open func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        // nothing
+        // 変換開始時（新規）のカーソル位置を保存
+        let wasEmpty = markedTextStorage.length == 0
+
+        // Convert string to NSAttributedString
+        if let attrString = string as? NSAttributedString {
+            markedTextStorage = NSMutableAttributedString(attributedString: attrString)
+        } else if let str = string as? String {
+            markedTextStorage = NSMutableAttributedString(string: str)
+        } else {
+            markedTextStorage = NSMutableAttributedString()
+        }
+        markedTextSelectedRange = selectedRange
+
+        // 変換開始時にカーソル位置を記憶
+        if wasEmpty && markedTextStorage.length > 0 && terminal != nil {
+            if markedTextJustConfirmed {
+                // 直前にinsertTextで確定した場合、既にmarkedTextStartXは更新済み
+                markedTextJustConfirmed = false
+            } else {
+                // 新規の変換開始
+                markedTextStartX = terminal.buffer.x
+                markedTextStartY = terminal.buffer.y
+            }
+        }
+
+        // Trigger redraw to show marked text inline
+        updateMarkedTextDisplay()
     }
-    
+
     // NSTextInputClient protocol implementation
     open func unmarkText() {
-        // nothing
+        markedTextStorage = NSMutableAttributedString()
+        markedTextSelectedRange = NSRange(location: NSNotFound, length: 0)
+        updateMarkedTextDisplay()
     }
     
     // NSTextInputClient protocol implementation
@@ -776,17 +835,15 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     // NSTextInputClient protocol implementation
     open func markedRange() -> NSRange {
-        print ("markedRange: This should return the actual range from the selection")
-        
-        // This means "no marked" - when we fix, we should address
-        return NSRange.empty
+        if markedTextStorage.length > 0 {
+            return NSRange(location: 0, length: markedTextStorage.length)
+        }
+        return NSRange(location: NSNotFound, length: 0)
     }
-    
+
     // NSTextInputClient protocol implementation
     open func hasMarkedText() -> Bool {
-        // print ("hasMarkedText: This should return the actual range from the selection")
-        // TODO
-        return false
+        return markedTextStorage.length > 0
     }
     
     // NSTextInputClient protocol implementation
@@ -804,11 +861,30 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     // NSTextInputClient protocol implementation
     open func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         actualRange?.pointee = range
-        
+
+        // 変換中は保存した開始位置を使用
+        if markedTextStorage.length > 0 && terminal != nil {
+            let buffer = terminal.buffer
+            let offset = cellDimension.height * CGFloat(markedTextStartY - (buffer.yDisp - buffer.yBase) + 1)
+            let lineOriginY = frame.height - offset
+            let cursorX = cellDimension.width * CGFloat(markedTextStartX)
+
+            let rect = NSRect(
+                x: cursorX,
+                y: lineOriginY,
+                width: cellDimension.width,
+                height: cellDimension.height
+            )
+
+            if let r = window?.convertToScreen(convert(rect, to: nil)) {
+                return r
+            }
+        }
+
         if let r = window?.convertToScreen(convert(caretView!.frame, to: nil)) {
             return r
         }
-        
+
         return .zero
     }
     
@@ -1193,6 +1269,102 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     open func hideCursor(source: Terminal) {
         caretView.removeFromSuperview()
+    }
+
+    // MARK: - IME Inline Drawing
+
+    /// Trigger redraw to show/hide marked text at cursor
+    func updateMarkedTextDisplay() {
+        needsDisplay = true
+
+        // IME変換中はキャレットをmarkedTextの右端に移動
+        guard let caretView = caretView else { return }
+
+        if markedTextStorage.length > 0 {
+            // markedTextの文字幅を計算
+            var markedColumns = 0
+            for char in markedTextStorage.string {
+                markedColumns += Wcwidth.cellSize(char)
+            }
+
+            let buffer = terminal.buffer
+            let offset = cellDimension.height * CGFloat(markedTextStartY - (buffer.yDisp - buffer.yBase) + 1)
+            let lineOriginY = frame.height - offset
+            let caretX = cellDimension.width * CGFloat(markedTextStartX + markedColumns)
+
+            caretView.frame.origin = CGPoint(x: caretX, y: lineOriginY)
+        } else {
+            // 変換終了時はキャレットを元の位置に戻す
+            updateCursorPosition()
+        }
+    }
+
+    /// Draw marked text (IME composing text) at cursor position
+    func drawMarkedText(in context: CGContext) {
+        guard markedTextStorage.length > 0 else { return }
+        guard terminal != nil else { return }
+
+        let text = markedTextStorage.string
+        let buffer = terminal.buffer
+
+        // 保存した変換開始位置を使用
+        let vy = buffer.yBase + markedTextStartY
+        guard vy < buffer.yDisp + buffer.rows else { return }
+
+        let offset = cellDimension.height * CGFloat(markedTextStartY - (buffer.yDisp - buffer.yBase) + 1)
+        let lineOriginY = frame.height - offset
+        let startX = cellDimension.width * CGFloat(markedTextStartX)
+
+        // 各文字の幅を計算（CJK文字は2セル）
+        var totalColumns = 0
+        for char in text {
+            totalColumns += Wcwidth.cellSize(char)
+        }
+
+        // Draw background
+        let bgRect = CGRect(
+            x: startX,
+            y: lineOriginY,
+            width: cellDimension.width * CGFloat(totalColumns),
+            height: cellDimension.height
+        )
+        context.setFillColor(nativeBackgroundColor.cgColor)
+        context.fill(bgRect)
+
+        // Draw underline
+        context.setStrokeColor(nativeForegroundColor.cgColor)
+        context.setLineWidth(1.0)
+        context.move(to: CGPoint(x: startX, y: lineOriginY + 1))
+        context.addLine(to: CGPoint(x: startX + cellDimension.width * CGFloat(totalColumns), y: lineOriginY + 1))
+        context.strokePath()
+
+        // Draw each character at grid position
+        context.saveGState()
+        context.textMatrix = .identity
+
+        let lineDescent = CTFontGetDescent(fontSet.normal)
+        let lineLeading = CTFontGetLeading(fontSet.normal)
+        let yOffset = ceil(lineDescent + lineLeading)
+
+        var currentColumn = 0
+        for char in text {
+            let charStr = String(char)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: fontSet.normal,
+                .foregroundColor: nativeForegroundColor
+            ]
+            let attrString = NSAttributedString(string: charStr, attributes: attributes)
+            let line = CTLineCreateWithAttributedString(attrString)
+
+            let xPos = startX + cellDimension.width * CGFloat(currentColumn)
+            context.textPosition = CGPoint(x: xPos, y: lineOriginY + yOffset)
+            CTLineDraw(line, context)
+
+            // 文字幅を加算（CJK文字は2セル）
+            currentColumn += Wcwidth.cellSize(char)
+        }
+
+        context.restoreGState()
     }
     
     open func cursorStyleChanged (source: Terminal, newStyle: CursorStyle) {
