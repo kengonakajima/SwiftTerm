@@ -791,16 +791,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
         markedTextSelectedRange = selectedRange
 
-        // 変換開始時にカーソル位置を記憶
+        // 変換開始時に常に現在のカーソル位置を使用
         if wasEmpty && markedTextStorage.length > 0 && terminal != nil {
-            if markedTextJustConfirmed {
-                // 直前にinsertTextで確定した場合、既にmarkedTextStartXは更新済み
-                markedTextJustConfirmed = false
-            } else {
-                // 新規の変換開始
-                markedTextStartX = terminal.buffer.x
-                markedTextStartY = terminal.buffer.y
-            }
+            markedTextStartX = terminal.buffer.x
+            markedTextStartY = terminal.buffer.y
+            markedTextJustConfirmed = false
         }
 
         // Trigger redraw to show marked text inline
@@ -862,30 +857,34 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     open func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         actualRange?.pointee = range
 
-        // 変換中は保存した開始位置を使用
-        if markedTextStorage.length > 0 && terminal != nil {
-            let buffer = terminal.buffer
-            let offset = cellDimension.height * CGFloat(markedTextStartY - (buffer.yDisp - buffer.yBase) + 1)
-            let lineOriginY = frame.height - offset
-            let cursorX = cellDimension.width * CGFloat(markedTextStartX)
-
-            let rect = NSRect(
-                x: cursorX,
-                y: lineOriginY,
-                width: cellDimension.width,
-                height: cellDimension.height
-            )
-
-            if let r = window?.convertToScreen(convert(rect, to: nil)) {
-                return r
-            }
+        guard let window = window else {
+            return .zero
         }
 
-        if let r = window?.convertToScreen(convert(caretView!.frame, to: nil)) {
-            return r
-        }
+        // terminal.bufferから直接カーソル位置を計算（caretViewに依存しない）
+        let buffer = terminal.buffer
+        let cursorX = buffer.x
+        let cursorY = buffer.y
 
-        return .zero
+        // ビュー内でのカーソル位置を計算
+        let offset = cellDimension.height * CGFloat(cursorY - (buffer.yDisp - buffer.yBase) + 1)
+        let caretY = frame.height - offset
+        let caretX = cellDimension.width * CGFloat(cursorX)
+
+        // ビューのスクリーン座標を取得
+        let viewFrameInWindow = convert(bounds, to: nil)
+        let viewFrameOnScreen = window.convertToScreen(viewFrameInWindow)
+
+        // スクリーン座標に変換
+        let screenX = viewFrameOnScreen.origin.x + caretX
+        let screenY = viewFrameOnScreen.origin.y + caretY
+
+        return NSRect(
+            x: screenX,
+            y: screenY,
+            width: cellDimension.width,
+            height: cellDimension.height
+        )
     }
     
     // NSTextInputClient protocol implementation

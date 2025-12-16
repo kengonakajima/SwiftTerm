@@ -981,8 +981,13 @@ extension TerminalView {
         #endif
         caretView.frame.origin = CGPoint(x: lineOrigin.x + (cellDimension.width * doublePosition * CGFloat(buffer.x)), y: lineOrigin.y)
         caretView.setText (ch: buffer.lines [vy][buffer.x])
+
+        // IMEに位置変更を通知（TUIアプリで画面更新時にIME候補ウィンドウ位置を更新）
+        #if os(macOS)
+        self.inputContext?.invalidateCharacterCoordinates()
+        #endif
     }
-    
+
     // Does not use a default argument and merge, because it is called back
     func updateDisplay ()
     {
