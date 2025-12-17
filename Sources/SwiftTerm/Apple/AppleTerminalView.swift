@@ -923,14 +923,14 @@ extension TerminalView {
         }
 
         terminal.clearUpdateRange ()
-                
+
         #if os(macOS)
         let baseLine = frame.height
         var region = CGRect (x: 0,
                              y: baseLine - (cellDimension.height + CGFloat(rowEnd) * cellDimension.height),
                              width: frame.width,
                              height: CGFloat(rowEnd-rowStart + 1) * cellDimension.height)
-        
+
         // If we are the last line, we should also queue a refresh for the "remaining" bits at the
         // end which can be redrawn by large unicode
         if rowEnd == terminal.rows - 1 {

@@ -417,6 +417,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         guard let currentContext = getCurrentGraphicsContext() else {
             return
         }
+
+        // 描画前にdirtyRect全体を背景色でクリア（レイヤーキャッシュの残留防止）
+        nativeBackgroundColor.setFill()
+        dirtyRect.fill()
+
         drawTerminalContents (dirtyRect: dirtyRect, context: currentContext, bufferOffset: terminal.buffer.yDisp)
         // Draw IME composing text at cursor position
         drawMarkedText(in: currentContext)
