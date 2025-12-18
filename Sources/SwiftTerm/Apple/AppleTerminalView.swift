@@ -762,11 +762,7 @@ extension TerminalView {
                                 rect.size.width = frame.width - rect.origin.x
                             }
                             
-                            #if os(macOS)
-                            rect.fill(using: .destinationOver)
-                            #else
                             context.fill(rect)
-                            #endif
                             context.restoreGState()
                         }
                     }
