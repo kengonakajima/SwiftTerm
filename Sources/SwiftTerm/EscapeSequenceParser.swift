@@ -329,7 +329,7 @@ public class EscapeSequenceParser {
         _parsTxt = []
         _collect = []
         // "\"
-        setEscHandler("\\", { [unowned self] collect, flag in })
+        setEscHandler("\\", { _, _ in })
     }
     
     var escHandlerFallback: EscHandlerFallback = { (collect: cstring, flag: UInt8) in

@@ -1245,7 +1245,6 @@ open class Terminal {
                         // If the resulting string is 1 grapheme cluster, then it combined properly
                         if newStr.count == 1 {
                             let oldSize = cd.width
-                            let newSize: Int8
 
                             if let newCh = newStr.first {
                                 switch firstScalar.value {

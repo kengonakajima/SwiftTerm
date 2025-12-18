@@ -1007,9 +1007,8 @@ extension TerminalView {
     {
         // throttle
         if !pendingDisplay {
-            let fps60 = 16670000
-            let fps30 = 16670000*2
-            let fpsDelay = fps30  // 30fpsで大量出力時のチラつきを軽減
+            // fps60 = 16670000, fps30 = 16670000*2
+            let fpsDelay = 16670000*2  // 30fpsで大量出力時のチラつきを軽減
             pendingDisplay = true
             DispatchQueue.main.asyncAfter(
                 deadline: DispatchTime (uptimeNanoseconds: DispatchTime.now().uptimeNanoseconds + UInt64 (fpsDelay)),
