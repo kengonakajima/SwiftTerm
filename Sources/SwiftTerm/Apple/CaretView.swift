@@ -40,8 +40,7 @@ extension CaretView {
         context.fill([region])
 
         let lineDescent = CTFontGetDescent(terminal.fontSet.normal)
-        let lineLeading = CTFontGetLeading(terminal.fontSet.normal)
-        let yOffset = ceil(lineDescent+lineLeading)
+        let yOffset = ceil(lineDescent)
         
         guard style == .steadyBlock || style  == .blinkBlock else {
             return

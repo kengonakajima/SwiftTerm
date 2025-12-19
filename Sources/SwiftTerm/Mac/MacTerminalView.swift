@@ -1347,8 +1347,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         context.textMatrix = .identity
 
         let lineDescent = CTFontGetDescent(fontSet.normal)
-        let lineLeading = CTFontGetLeading(fontSet.normal)
-        let yOffset = ceil(lineDescent + lineLeading)
+        let yOffset = ceil(lineDescent)
 
         var currentColumn = 0
         for char in text {

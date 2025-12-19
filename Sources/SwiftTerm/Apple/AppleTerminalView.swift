@@ -157,8 +157,8 @@ extension TerminalView {
     {
         let lineAscent = CTFontGetAscent (fontSet.normal)
         let lineDescent = CTFontGetDescent (fontSet.normal)
-        let lineLeading = CTFontGetLeading (fontSet.normal)
-        let cellHeight = ceil(lineAscent + lineDescent + lineLeading)
+        // Note: lineLeading is excluded to avoid gaps in block characters (U+2580-U+259F)
+        let cellHeight = ceil(lineAscent + lineDescent)
         #if os(macOS)
         // The following is a more robust way of getting the largest ascii character width, but comes with a performance hit.
         // See: https://github.com/migueldeicaza/SwiftTerm/issues/286
@@ -377,7 +377,13 @@ extension TerminalView {
             tf = fontSet.normal
         }
         
-        let fgColor = mapColor (color: fg, isFg: true, isBold: isBold, useBrightColors: useBrightColors)
+        var fgColor = mapColor (color: fg, isFg: true, isBold: isBold, useBrightColors: useBrightColors)
+
+        // Apply dim/faint attribute (SGR 2) - reduce color intensity
+        if flags.contains(.dim) {
+            fgColor = fgColor.withAlphaComponent(0.5)
+        }
+
         var nsattr: [NSAttributedString.Key:Any] = [
             .font: tf,
             .foregroundColor: fgColor,
@@ -621,13 +627,118 @@ extension TerminalView {
         currentContext.restoreGState()
     }
 
-    
+
+    // Draw block drawing characters (U+2580-U+259F) as rectangles
+    // Returns true if the character was a block character and was drawn
+    func drawBlockCharacter(_ char: Character, at rect: CGRect, context: CGContext) -> Bool {
+        guard let scalar = char.unicodeScalars.first,
+              scalar.value >= 0x2580 && scalar.value <= 0x259F else {
+            return false
+        }
+
+        let x = rect.origin.x
+        let y = rect.origin.y
+        let w = rect.width
+        let h = rect.height
+
+        context.saveGState()
+        context.setShouldAntialias(false)
+
+        switch scalar.value {
+        case 0x2580: // ▀ UPPER HALF BLOCK
+            context.fill(CGRect(x: x, y: y + h/2, width: w, height: h/2))
+        case 0x2581: // ▁ LOWER ONE EIGHTH BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h/8))
+        case 0x2582: // ▂ LOWER ONE QUARTER BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h/4))
+        case 0x2583: // ▃ LOWER THREE EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h*3/8))
+        case 0x2584: // ▄ LOWER HALF BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h/2))
+        case 0x2585: // ▅ LOWER FIVE EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h*5/8))
+        case 0x2586: // ▆ LOWER THREE QUARTERS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h*3/4))
+        case 0x2587: // ▇ LOWER SEVEN EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h*7/8))
+        case 0x2588: // █ FULL BLOCK
+            context.fill(CGRect(x: x, y: y, width: w, height: h))
+        case 0x2589: // ▉ LEFT SEVEN EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w*7/8, height: h))
+        case 0x258A: // ▊ LEFT THREE QUARTERS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w*3/4, height: h))
+        case 0x258B: // ▋ LEFT FIVE EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w*5/8, height: h))
+        case 0x258C: // ▌ LEFT HALF BLOCK
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h))
+        case 0x258D: // ▍ LEFT THREE EIGHTHS BLOCK
+            context.fill(CGRect(x: x, y: y, width: w*3/8, height: h))
+        case 0x258E: // ▎ LEFT ONE QUARTER BLOCK
+            context.fill(CGRect(x: x, y: y, width: w/4, height: h))
+        case 0x258F: // ▏ LEFT ONE EIGHTH BLOCK
+            context.fill(CGRect(x: x, y: y, width: w/8, height: h))
+        case 0x2590: // ▐ RIGHT HALF BLOCK
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h))
+        case 0x2591: // ░ LIGHT SHADE (25%)
+            for row in stride(from: 0, to: Int(h), by: 4) {
+                for col in stride(from: 0, to: Int(w), by: 4) {
+                    context.fill(CGRect(x: x + CGFloat(col), y: y + CGFloat(row), width: 1, height: 1))
+                }
+            }
+        case 0x2592: // ▒ MEDIUM SHADE (50%)
+            for row in stride(from: 0, to: Int(h), by: 2) {
+                for col in stride(from: (row/2) % 2, to: Int(w), by: 2) {
+                    context.fill(CGRect(x: x + CGFloat(col), y: y + CGFloat(row), width: 1, height: 1))
+                }
+            }
+        case 0x2593: // ▓ DARK SHADE (75%)
+            context.fill(CGRect(x: x, y: y, width: w, height: h))
+            context.setFillColor(CGColor(gray: 0, alpha: 0.25))
+            context.fill(CGRect(x: x, y: y, width: w, height: h))
+        case 0x2594: // ▔ UPPER ONE EIGHTH BLOCK
+            context.fill(CGRect(x: x, y: y + h*7/8, width: w, height: h/8))
+        case 0x2595: // ▕ RIGHT ONE EIGHTH BLOCK
+            context.fill(CGRect(x: x + w*7/8, y: y, width: w/8, height: h))
+        case 0x2596: // ▖ QUADRANT LOWER LEFT
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h/2))
+        case 0x2597: // ▗ QUADRANT LOWER RIGHT
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h/2))
+        case 0x2598: // ▘ QUADRANT UPPER LEFT
+            context.fill(CGRect(x: x, y: y + h/2, width: w/2, height: h/2))
+        case 0x2599: // ▙ QUADRANT UPPER LEFT AND LOWER LEFT AND LOWER RIGHT
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h))
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h/2))
+        case 0x259A: // ▚ QUADRANT UPPER LEFT AND LOWER RIGHT
+            context.fill(CGRect(x: x, y: y + h/2, width: w/2, height: h/2))
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h/2))
+        case 0x259B: // ▛ QUADRANT UPPER LEFT AND UPPER RIGHT AND LOWER LEFT
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h))
+            context.fill(CGRect(x: x + w/2, y: y + h/2, width: w/2, height: h/2))
+        case 0x259C: // ▜ QUADRANT UPPER LEFT AND UPPER RIGHT AND LOWER RIGHT
+            context.fill(CGRect(x: x, y: y + h/2, width: w, height: h/2))
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h/2))
+        case 0x259D: // ▝ QUADRANT UPPER RIGHT
+            context.fill(CGRect(x: x + w/2, y: y + h/2, width: w/2, height: h/2))
+        case 0x259E: // ▞ QUADRANT UPPER RIGHT AND LOWER LEFT
+            context.fill(CGRect(x: x + w/2, y: y + h/2, width: w/2, height: h/2))
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h/2))
+        case 0x259F: // ▟ QUADRANT UPPER RIGHT AND LOWER LEFT AND LOWER RIGHT
+            context.fill(CGRect(x: x + w/2, y: y, width: w/2, height: h))
+            context.fill(CGRect(x: x, y: y, width: w/2, height: h/2))
+        default:
+            context.restoreGState()
+            return false
+        }
+
+        context.restoreGState()
+        return true
+    }
+
     // TODO: this should not render any lines outside the dirtyRect
     func drawTerminalContents (dirtyRect: TTRect, context: CGContext, bufferOffset: Int)
     {
         let lineDescent = CTFontGetDescent(fontSet.normal)
-        let lineLeading = CTFontGetLeading(fontSet.normal)
-        let yOffset = ceil(lineDescent+lineLeading)
+        let yOffset = ceil(lineDescent)
 
         func calcLineOffset (forRow: Int) -> CGFloat {
             cellDimension.height * CGFloat (forRow-bufferOffset+1)
@@ -794,8 +905,52 @@ extension TerminalView {
                         }
                         context.setFillColor(cgColor)
                     }
-                    
-                    CTFontDrawGlyphs(runFont, runGlyphs, &positions, positions.count, context)
+
+                    // Get the string range for this run to check for block characters
+                    let stringRange = CTRunGetStringRange(run)
+                    let segmentString = segment.attributedString.string
+                    let startIdx = segmentString.index(segmentString.startIndex, offsetBy: stringRange.location)
+                    let endIdx = segmentString.index(startIdx, offsetBy: stringRange.length)
+                    let runString = String(segmentString[startIdx..<endIdx])
+                    let runChars = Array(runString)
+
+                    // Draw characters - use special rendering for block characters
+                    var glyphsToDrawStart = 0
+                    var i = 0
+                    while i < runGlyphsCount {
+                        let charIndex = min(i, runChars.count - 1)
+                        let char = runChars[charIndex]
+                        let columnForGlyph = startColumn + (i * segment.columnWidth)
+
+                        // Check if this is a block character
+                        if let scalar = char.unicodeScalars.first,
+                           scalar.value >= 0x2580 && scalar.value <= 0x259F {
+                            // Draw any pending normal glyphs first
+                            if i > glyphsToDrawStart {
+                                var glyphSlice = Array(runGlyphs[glyphsToDrawStart..<i])
+                                var posSlice = Array(positions[glyphsToDrawStart..<i])
+                                CTFontDrawGlyphs(runFont, &glyphSlice, &posSlice, glyphSlice.count, context)
+                            }
+
+                            // Draw block character as rectangle
+                            let cellRect = CGRect(
+                                x: lineOrigin.x + (cellDimension.width * CGFloat(columnForGlyph)),
+                                y: lineOrigin.y,
+                                width: cellDimension.width * CGFloat(segment.columnWidth),
+                                height: cellDimension.height)
+                            _ = drawBlockCharacter(char, at: cellRect, context: context)
+
+                            glyphsToDrawStart = i + 1
+                        }
+                        i += 1
+                    }
+
+                    // Draw remaining normal glyphs
+                    if glyphsToDrawStart < runGlyphsCount {
+                        var glyphSlice = Array(runGlyphs[glyphsToDrawStart..<runGlyphsCount])
+                        var posSlice = Array(positions[glyphsToDrawStart..<runGlyphsCount])
+                        CTFontDrawGlyphs(runFont, &glyphSlice, &posSlice, glyphSlice.count, context)
+                    }
 
                     // Draw other attributes
                     drawRunAttributes(runAttributes, glyphPositions: positions, in: context)
