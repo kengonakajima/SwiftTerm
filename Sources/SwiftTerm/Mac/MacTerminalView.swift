@@ -98,7 +98,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     var markedTextStartY: Int = 0  // カーソルY位置（変換開始時）
     var markedTextJustConfirmed: Bool = false  // 直前にinsertTextで確定した
     
-    var cellDimension: CellDimension!
+    public var cellDimension: CellDimension!
     var caretView: CaretView!
     public var terminal: Terminal!
 
@@ -427,7 +427,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         drawMarkedText(in: currentContext)
     }
     
-    public override func cursorUpdate(with event: NSEvent)
+    open override func cursorUpdate(with event: NSEvent)
     {
         NSCursor.iBeam.set ()
     }
@@ -546,7 +546,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     // We monitor the flags changed to enable URL previews on mouse-hover like iTerm
     // when the Command key is pressed.
     
-    public override func flagsChanged(with event: NSEvent) {
+    open override func flagsChanged(with event: NSEvent) {
         if event.modifierFlags.contains(.command){
             commandActive = true
             startTracking()
@@ -972,13 +972,13 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         return terminal.encodeButton(button: event.buttonNumber, release: isReleaseEvent, shift: flags.contains(.shift), meta: flags.contains(.option), control: flags.contains(.control))
     }
     
-    func calculateMouseHit (with event: NSEvent) -> (grid: Position, pixels: Position)
+    open func calculateMouseHit (with event: NSEvent) -> (grid: Position, pixels: Position)
     {
         let point = convert(event.locationInWindow, from: nil)
         return calculateMouseHit(at: point)
     }
 
-    func calculateMouseHit (at point: CGPoint) -> (grid: Position, pixels: Position)
+    open func calculateMouseHit (at point: CGPoint) -> (grid: Position, pixels: Position)
     {
         func toInt (_ p: NSPoint) -> Position {
 
@@ -1052,7 +1052,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     var didSelectionDrag: Bool = false
     
-    public override func mouseUp(with event: NSEvent) {
+    open override func mouseUp(with event: NSEvent) {
         if event.modifierFlags.contains(.command){
             if let payload = getPayload(for: event) as? String {
                 if let (url, params) = urlAndParamsFrom(payload: payload) {
@@ -1170,7 +1170,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
     
-    public override func mouseMoved(with event: NSEvent) {
+    open override func mouseMoved(with event: NSEvent) {
         let hit = calculateMouseHit(with: event)
         if commandActive {
             if let payload = getPayload(for: event) as? String {
@@ -1210,7 +1210,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         return 1
     }
     
-    public override func resetCursorRects() {
+    open override func resetCursorRects() {
         addCursorRect(bounds, cursor: .iBeam)
     }
     

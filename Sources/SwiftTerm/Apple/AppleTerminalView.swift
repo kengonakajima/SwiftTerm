@@ -51,7 +51,7 @@ struct ViewLineInfo {
 }
 
 extension TerminalView {
-    typealias CellDimension = CGSize
+    public typealias CellDimension = CGSize
     
     func resetCaches ()
     {
@@ -905,6 +905,10 @@ extension TerminalView {
     /// Update visible area
     func updateDisplay (notifyAccessibility: Bool)
     {
+        // Skip display update during synchronized output mode
+        if terminal.synchronizedOutput {
+            return
+        }
         updateCursorPosition()
         guard let (rowStart, rowEnd) = terminal.getUpdateRange () else {
             if notifyUpdateChanges {

@@ -332,6 +332,10 @@ open class Terminal {
     /// Indicates that the application has toggled bracketed paste mode, which means that when content is pasted into
     /// the terminal, the content will be wrapped in "ESC [ 200 ~" to start, and "ESC [ 201 ~" to end.
     public private(set) var bracketedPasteMode: Bool = false
+
+    /// Indicates synchronized output mode (DEC mode 2026). When enabled, the terminal should
+    /// buffer output and only update the display when the mode is disabled.
+    public private(set) var synchronizedOutput: Bool = false
     
     private var charset: [UInt8:String]? = nil
     var gcharset: Int = 0
@@ -3748,7 +3752,8 @@ open class Terminal {
                 
             case 2004: // bracketed paste mode (https://cirw.in/blog/bracketed-paste)
                 bracketedPasteMode = false
-                break
+            case 2026: // synchronized output mode
+                synchronizedOutput = false
             default:
                 log ("Unhandled DEC Private Mode Reset (DECRST) with \(par)")
                 break
@@ -3983,6 +3988,8 @@ open class Terminal {
             case 2004: // bracketed paste mode (https://cirw.in/blog/bracketed-paste)
                 // TODO: must implement bracketed paste mode
                 bracketedPasteMode = true
+            case 2026: // synchronized output mode
+                synchronizedOutput = true
             default:
                 log ("Unhandled DEC Private Mode Set (DECSET) with \(par)")
                 break;
